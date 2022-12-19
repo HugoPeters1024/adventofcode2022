@@ -1,4 +1,4 @@
-use std::{io::BufRead, collections::{HashSet, HashMap}, borrow::{BorrowMut, Borrow}};
+use std::{io::BufRead, collections::HashMap};
 
 #[derive(Debug)]
 enum Dir { Left, Right }
@@ -8,6 +8,7 @@ struct State {
     rock_idx: usize,
     jet_idx: usize,
     rel_x: i64,
+    // distance to the heighest_y
     y_to_go: i64,
     // as offsets from heighest_y
     heights: [u8; 7],
