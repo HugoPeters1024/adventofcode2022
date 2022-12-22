@@ -19,7 +19,7 @@ enum Instr {
     TurnCounterClockwise,
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 enum Dir {
     Up, Down, Left, Right
 }
@@ -48,7 +48,6 @@ impl Dir {
 
 fn main() {
     let mut grid : HashMap<(i32, i32), Tile> = HashMap::new();
-    let mut visisted : HashMap<(i32,i32),Dir> = HashMap::new();
     let mut y = 1;
 
     let lines: Vec<String> = std::io::stdin()
@@ -93,7 +92,7 @@ fn main() {
     let mut pdir = Dir::Right;
 
 
-    for instr in instrs {
+    for instr in instrs.iter().cloned() {
         match instr {
             Instr::Move(n) => {
                 for _ in 0..n {
@@ -189,6 +188,56 @@ fn main() {
         // 4 -> 3
         wrapping_rules.insert((y - 50, 100, Dir::Up), (51, y, Dir::Right));
     }
+
+    let mut px = xstart;
+    let mut py = 1;
+    let mut pdir = Dir::Right;
+
+
+    for instr in instrs {
+        match instr {
+            Instr::Move(n) => {
+                for _ in 0..n {
+                    let mut ndir = pdir;
+                    let (mut nx, mut ny) = match pdir {
+                        Dir::Up => (px, py-1),
+                        Dir::Down => (px, py+1),
+                        Dir::Left => (px-1, py),
+                        Dir::Right => (px+1, py),
+                    };
+
+                    // wrap around
+                    if !grid.contains_key(&(nx, ny)) {
+                        let (newx, newy, newdir) = wrapping_rules.get(&(nx, ny, pdir)).unwrap();
+                        nx = *newx;
+                        ny = *newy;
+                        ndir = *newdir;
+                    }
+
+                    match grid.get(&(nx, ny)).unwrap() {
+                        Tile::Empty => {
+                            px = nx;
+                            py = ny;
+                            pdir = ndir;
+                        },
+                        Tile::Wall => {
+                            break;
+                        }
+                    }
+                }
+            },
+            Instr::TurnClockwise => pdir = pdir.clockwise(),
+            Instr::TurnCounterClockwise => pdir = pdir.counter_clockwise(),
+        }
+    }
+
+    let heading_value = match pdir {
+        Dir::Up => 3,
+        Dir::Down => 1,
+        Dir::Left => 2,
+        Dir::Right => 0,
+    };
+    println!("password {}", 1000 * py + 4 * px + heading_value);
 }
 
 fn parse_instrs(input: &str) -> IResult<&str, Vec<Instr>> {
