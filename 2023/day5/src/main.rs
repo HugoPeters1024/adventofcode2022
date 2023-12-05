@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
-    io::BufRead,
-};
+use std::{io::BufRead, sync::Mutex};
 
 use nom::{
     bytes::complete::tag,
@@ -11,6 +7,7 @@ use nom::{
     multi::separated_list1,
     IResult,
 };
+use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use scanf::sscanf;
 
 fn parse_i64(input: &str) -> IResult<&str, i64> {
@@ -22,10 +19,23 @@ fn parse_seeds(input: &str) -> IResult<&str, Vec<i64>> {
     separated_list1(space1, parse_i64)(input)
 }
 
-fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
+fn find_best_match(map: &Vec<(i64, i64, i64)>, source_id: i64) -> i64 {
+    let mut lhs: i64 = 0;
+    let mut rhs: i64 = map.len() as i64 - 1;
+    while lhs <= rhs {
+        let mid = (lhs + rhs) / 2;
+        let (dest_start, source_start, range) = &map[mid as usize];
+        if source_start + range <= source_id {
+            lhs = mid + 1;
+        } else if source_start > &source_id {
+            rhs = mid - 1;
+        } else {
+            let delta = source_id - source_start;
+            return dest_start + delta;
+        }
+    }
+
+    source_id
 }
 
 fn main() {
@@ -71,7 +81,7 @@ fn main() {
             }
         }
 
-        entries.sort_by(|lhs, rhs| rhs.2.cmp(&lhs.2));
+        entries.sort_by(|lhs, rhs| lhs.1.cmp(&rhs.1));
 
         maps.push(entries);
         i += 1;
@@ -83,22 +93,15 @@ fn main() {
         let mut source = 0;
         let mut dest = 1;
         let mut source_id = *seed;
+        dbg!(source_id);
 
         loop {
-            let entries = &maps[source];
-            if let Some(((dest_start, _, _), delta)) = entries
-                .iter()
-                .map(|x| (x, source_id - x.1))
-                .filter(|x| x.1 >= 0 && x.1 <= x.0 .2)
-                .min_by(|lhs, rhs| lhs.1.cmp(&rhs.1))
-            {
-                source_id = dest_start + delta;
-            }
+            source_id = find_best_match(&maps[source], source_id);
 
             source += 1;
             dest += 1;
 
-            if dest == 7 {
+            if dest == 8 {
                 locations.push(source_id);
                 break;
             }
@@ -107,31 +110,34 @@ fn main() {
 
     println!("Part 1: {}", locations.iter().min().unwrap());
 
-    let mut min_location = 999999999999999999;
-    for seed_and_range in seeds.chunks(2) {
-        println!("tick");
+    // shared mutex to collect the minimum result
+    let min_location: Mutex<i64> = Mutex::new(999999999999999999);
+    seeds.par_chunks_exact(2).for_each(|seed_and_range| {
+        // We use a local minimum as an upper bounded on the shared minimum
+        // to prevent locking the mutex when not needed
+        let mut local_min: i64 = 999999999999999999;
         let start_seed = seed_and_range[0];
         for seed in start_seed..=start_seed + seed_and_range[1] {
             let mut source = 0;
             let mut source_id = seed;
 
             loop {
-                for (dest_start, source_start, range) in &maps[source] {
-                    let delta = source_id - source_start;
-                    if delta >= 0 && delta <= *range {
-                        source_id = dest_start + delta;
-                        break;
-                    }
-                }
+                source_id = find_best_match(&maps[source], source_id);
 
                 source += 1;
-                if source == 6 {
-                    min_location = std::cmp::min(source_id, min_location);
+                if source == 7 {
+                    if source_id < local_min {
+                        let mut r = min_location.lock().unwrap();
+                        *r = std::cmp::min(source_id, *r);
+                        // update the local min while we have to mutex to
+                        // prevent locking in the future.
+                        local_min = std::cmp::min(source_id, *r);
+                    }
                     break;
                 };
             }
         }
-    }
+    });
 
-    println!("Part 2: {}", min_location);
+    println!("Part 2: {}", min_location.lock().unwrap());
 }
