@@ -19,15 +19,16 @@ fn parse_seeds(input: &str) -> IResult<&str, Vec<i64>> {
     separated_list1(space1, parse_i64)(input)
 }
 
-fn find_best_match(map: &Vec<(i64, i64, i64)>, source_id: i64) -> i64 {
-    let mut lhs: i64 = 0;
-    let mut rhs: i64 = map.len() as i64 - 1;
+fn find_best_match(map: &[(i64, i64, i64)], source_id: &i64) -> i64 {
+    let mut lhs: usize = 0;
+    let mut rhs: usize = map.len() - 1;
     while lhs <= rhs {
-        let mid = (lhs + rhs) / 2;
-        let (dest_start, source_start, range) = &map[mid as usize];
-        if source_start + range <= source_id {
+        let mid = (lhs + rhs) >> 1;
+        let (dest_start, source_start, range) = &map[mid];
+
+        if source_start + range <= *source_id {
             lhs = mid + 1;
-        } else if source_start > &source_id {
+        } else if source_start > source_id {
             rhs = mid - 1;
         } else {
             let delta = source_id - source_start;
@@ -35,7 +36,7 @@ fn find_best_match(map: &Vec<(i64, i64, i64)>, source_id: i64) -> i64 {
         }
     }
 
-    source_id
+    *source_id
 }
 
 fn main() {
@@ -96,7 +97,7 @@ fn main() {
         dbg!(source_id);
 
         loop {
-            source_id = find_best_match(&maps[source], source_id);
+            source_id = find_best_match(&maps[source], &source_id);
 
             source += 1;
             dest += 1;
@@ -113,7 +114,7 @@ fn main() {
     let mut divided_seeds: VecDeque<(i64, i64, bool)> =
         VecDeque::from_iter(seeds.chunks(2).map(|v| (v[0], v[1], false)));
 
-    let mil = 1000000;
+    let mil = 10000000;
     loop {
         let (start, range, seen) = divided_seeds.pop_front().unwrap();
         if seen {
@@ -130,18 +131,21 @@ fn main() {
 
     println!("Work items: {}", divided_seeds.len());
 
+    let divided_seeds = divided_seeds;
+    let maps = maps;
+
     // shared mutex to collect the minimum result
     let min_location: Mutex<i64> = Mutex::new(999999999999999999);
     divided_seeds.par_iter().for_each(|(start_seed, range, _)| {
         // We use a local minimum as an upper bounded on the shared minimum
         // to prevent locking the mutex when not needed
         let mut local_min: i64 = 999999999999999999;
-        for seed in *start_seed..=*start_seed + range {
+        for seed in *start_seed..*start_seed + range {
             let mut source = 0;
             let mut source_id = seed;
 
             loop {
-                source_id = find_best_match(&maps[source], source_id);
+                source_id = find_best_match(&maps[source], &source_id);
 
                 source += 1;
                 if source == 7 {
@@ -150,7 +154,7 @@ fn main() {
                         *r = std::cmp::min(source_id, *r);
                         // update the local min while we have to mutex to
                         // prevent locking in the future.
-                        local_min = std::cmp::min(source_id, *r);
+                        local_min = *r;
                     }
                     break;
                 };
