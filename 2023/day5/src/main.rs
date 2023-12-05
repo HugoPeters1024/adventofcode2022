@@ -1,4 +1,4 @@
-use std::{io::BufRead, sync::Mutex};
+use std::{collections::VecDeque, io::BufRead, sync::Mutex};
 
 use nom::{
     bytes::complete::tag,
@@ -7,7 +7,7 @@ use nom::{
     multi::separated_list1,
     IResult,
 };
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use scanf::sscanf;
 
 fn parse_i64(input: &str) -> IResult<&str, i64> {
@@ -110,14 +110,33 @@ fn main() {
 
     println!("Part 1: {}", locations.iter().min().unwrap());
 
+    let mut divided_seeds: VecDeque<(i64, i64, bool)> =
+        VecDeque::from_iter(seeds.chunks(2).map(|v| (v[0], v[1], false)));
+
+    let mil = 1000000;
+    loop {
+        let (start, range, seen) = divided_seeds.pop_front().unwrap();
+        if seen {
+            divided_seeds.push_back((start, range, true));
+            break;
+        }
+        if range > mil {
+            divided_seeds.push_front((start + mil, range - mil, false));
+            divided_seeds.push_back((start, mil, true));
+        } else {
+            divided_seeds.push_back((start, range, true));
+        }
+    }
+
+    println!("Work items: {}", divided_seeds.len());
+
     // shared mutex to collect the minimum result
     let min_location: Mutex<i64> = Mutex::new(999999999999999999);
-    seeds.par_chunks_exact(2).for_each(|seed_and_range| {
+    divided_seeds.par_iter().for_each(|(start_seed, range, _)| {
         // We use a local minimum as an upper bounded on the shared minimum
         // to prevent locking the mutex when not needed
         let mut local_min: i64 = 999999999999999999;
-        let start_seed = seed_and_range[0];
-        for seed in start_seed..=start_seed + seed_and_range[1] {
+        for seed in *start_seed..=*start_seed + range {
             let mut source = 0;
             let mut source_id = seed;
 
