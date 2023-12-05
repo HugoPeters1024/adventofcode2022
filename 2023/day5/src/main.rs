@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::BufRead, hash::{DefaultHasher, Hash, Hasher}};
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    io::BufRead,
+};
 
 use nom::{
     bytes::complete::tag,
@@ -26,8 +30,7 @@ fn calculate_hash<T: Hash>(t: &T) -> u64 {
 
 fn main() {
     let mut seeds = Vec::new();
-    let mut dest_lookup: HashMap<u64, u64> = HashMap::new();
-    let mut map_lookup: HashMap<(u64, u64), Vec<(i64, i64, i64)>> = HashMap::new();
+    let mut maps: Vec<Vec<(i64, i64, i64)>> = Vec::new();
 
     let lines: Vec<String> = std::io::stdin()
         .lock()
@@ -54,8 +57,6 @@ fn main() {
         let mut dest = String::new();
         sscanf!(&line, "{}-to-{} map:", source, dest).unwrap();
 
-        dest_lookup.insert(calculate_hash(&source), calculate_hash(&dest));
-
         let mut entries = Vec::new();
         let mut dest_start = 0;
         let mut source_start = 0;
@@ -70,19 +71,21 @@ fn main() {
             }
         }
 
-        map_lookup.insert((calculate_hash(&source), calculate_hash(&dest)), entries);
+        entries.sort_by(|lhs, rhs| rhs.2.cmp(&lhs.2));
+
+        maps.push(entries);
         i += 1;
     }
 
     let mut locations = Vec::new();
 
     for seed in &seeds {
-        let mut source = calculate_hash(&"seed");
-        let mut dest = calculate_hash(&"soil");
+        let mut source = 0;
+        let mut dest = 1;
         let mut source_id = *seed;
 
         loop {
-            let entries = &map_lookup[&(source, dest)];
+            let entries = &maps[source];
             if let Some(((dest_start, _, _), delta)) = entries
                 .iter()
                 .map(|x| (x, source_id - x.1))
@@ -92,13 +95,13 @@ fn main() {
                 source_id = dest_start + delta;
             }
 
-            source = dest.clone();
-            dest = if let Some(ndest) = dest_lookup.get(&dest) {
-                ndest.clone()
-            } else {
+            source += 1;
+            dest += 1;
+
+            if dest == 7 {
                 locations.push(source_id);
                 break;
-            };
+            }
         }
     }
 
@@ -106,28 +109,23 @@ fn main() {
 
     let mut min_location = 999999999999999999;
     for seed_and_range in seeds.chunks(2) {
+        println!("tick");
         let start_seed = seed_and_range[0];
         for seed in start_seed..=start_seed + seed_and_range[1] {
-            let mut source = calculate_hash(&"seed");
-            let mut dest = calculate_hash(&"soil");
+            let mut source = 0;
             let mut source_id = seed;
 
             loop {
-                let entries = &map_lookup[&(source, dest)];
-
-                if let Some(((dest_start, _, _), delta)) = entries
-                    .iter()
-                    .map(|x| (x, source_id - x.1))
-                    .filter(|x| x.1 >= 0 && x.1 <= x.0 .2)
-                    .min_by(|lhs, rhs| lhs.1.cmp(&rhs.1))
-                {
-                    source_id = dest_start + delta;
+                for (dest_start, source_start, range) in &maps[source] {
+                    let delta = source_id - source_start;
+                    if delta >= 0 && delta <= *range {
+                        source_id = dest_start + delta;
+                        break;
+                    }
                 }
 
-                source = dest;
-                dest = if let Some(ndest) = dest_lookup.get(&dest) {
-                    *ndest
-                } else {
+                source += 1;
+                if source == 6 {
                     min_location = std::cmp::min(source_id, min_location);
                     break;
                 };
