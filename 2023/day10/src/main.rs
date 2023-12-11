@@ -1,14 +1,7 @@
 use std::{
-    collections::{HashSet, VecDeque, HashMap},
+    collections::{HashMap, HashSet, VecDeque},
     io::BufRead,
 };
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum Winding {
-    Clockwise,
-    CounterClockwise,
-}
-
 
 struct Puzzle {
     fields: Vec<Vec<char>>,
@@ -19,7 +12,7 @@ struct Puzzle {
 }
 
 fn iter_dirs() -> impl Iterator<Item = (isize, isize)> {
-    vec![(0, 1), (1, 0), (0, -1), (-1, 0)].into_iter()
+    vec![(1, 0), (0, -1), (-1, 0), (0, 1)].into_iter()
 }
 
 fn turn_left(dir: (isize, isize)) -> (isize, isize) {
@@ -149,7 +142,7 @@ fn main() {
         }
     }
 
-    let puzzle = Puzzle {
+    let mut puzzle = Puzzle {
         fields: grid,
         width: grid_width,
         height: grid_height,
@@ -170,90 +163,73 @@ fn main() {
         }
     }
 
-    let mut coord_to_horz = HashMap::new();
-    for i in 0..path.len() {
-        let (x, y) = path[i];
-        let (xn, yn) = path[(i + 1) % path.len()];
-        if x == xn {
-            continue;
-        }
+    let path_lookup: HashSet<(usize, usize)> = HashSet::from_iter(path.iter().cloned());
 
-        if x < xn {
-            coord_to_horz.insert((x,y), Winding::Clockwise);
-            coord_to_horz.insert((xn,yn), Winding::Clockwise);
-        } else {
-            coord_to_horz.insert((x,y), Winding::CounterClockwise);
-            coord_to_horz.insert((xn,yn), Winding::CounterClockwise);
-        }
+    let exits: HashSet<(usize, usize)> = HashSet::from_iter([path[1], path[path.len() - 2]]);
+    dbg!(&exits);
+
+    // Replace S with the right piece of pipe
+    let exits_bits = iter_dirs()
+        .map(|(dx, dy)| (startx as isize + dx, starty as isize + dy))
+        .map(|(x, y)| (x as usize, y as usize))
+        .map(|(x, y)| if exits.contains(&(x, y)) { 1 } else { 0 })
+        .collect::<Vec<_>>();
+
+    dbg!(&exits_bits);
+
+    match exits_bits.as_slice() {
+        [1, 1, 0, 0] => puzzle.fields[starty][startx] = 'L',
+        [1, 0, 1, 0] => puzzle.fields[starty][startx] = '-',
+        [1, 0, 0, 1] => puzzle.fields[starty][startx] = 'F',
+        [0, 1, 1, 0] => puzzle.fields[starty][startx] = 'J',
+        [0, 1, 0, 1] => puzzle.fields[starty][startx] = '|',
+        [0, 0, 1, 1] => puzzle.fields[starty][startx] = '7',
+        _ => panic!("Invalid exit configuration"),
     }
 
-    let path_lookup: HashSet<(usize, usize)> = path.iter().cloned().collect();
-
-    let mut inside: HashSet<(usize, usize)> = HashSet::new();
+    // Find the number of tiles enclosed by path using the Even-Odd rule
+    let mut enclosed_tiles = HashSet::new();
     for y in 0..grid_height {
         for x in 0..grid_width {
-            if puzzle.fields[y][x] != '.' {
-                if !path_lookup.contains(&(x, y)) {
-                    inside.insert((x, y));
-                }
+            if path_lookup.contains(&(x, y)) {
                 continue;
             }
 
-
-            let debug = x == 16 && y == 0;
-
-            if debug {
-                println!("Starting at {}, {}", x, y);
-            }
-
-            let mut winding_number = 0;
-            let mut ys = y as isize;
+            let mut xs = x;
+            let mut crossing_count = 0;
             loop {
-                ys -= 1;
-                if ys < 0 {
+                xs += 1;
+                if xs >= grid_width {
                     break;
                 }
 
-                if let Some(winding) = coord_to_horz.get(&(x, ys as usize)) {
-                    if puzzle.fields[ys as usize][x] == 'L' {
-                        continue;
-                    }
-                    if puzzle.fields[ys as usize][x] == 'F' {
-                        continue;
-                    }
-                    if debug {
-                        println!("Winding at {}, {} is {:?}", x, ys, winding);
-                    }
-                    match winding {
-                        Winding::Clockwise => winding_number += 1,
-                        Winding::CounterClockwise => winding_number += 1,
-                    }
+                if ['-', 'F', '7'].contains(&puzzle.fields[y][xs]) {
+                    continue;
+                }
+
+                if path_lookup.contains(&(xs, y)) {
+                    crossing_count += 1;
                 }
             }
 
-            if winding_number % 2 != 0 {
-                inside.insert((x, y as usize));
+            if crossing_count % 2 == 1 {
+                enclosed_tiles.insert((x, y));
             }
         }
     }
 
-    println!("Part 2: {}", inside.len());
-
     for y in 0..grid_height {
         for x in 0..grid_width {
-            if inside.contains(&(x, y)) {
-                print!("I");
+            if path_lookup.contains(&(x, y)) {
+                print!("\x1b[31m{}\x1b[0m", puzzle.fields[y][x]);
+            } else if enclosed_tiles.contains(&(x, y)) {
+                print!("\x1b[32m{}\x1b[0m", puzzle.fields[y][x]);
             } else {
-                if let Some(winding) = coord_to_horz.get(&(x, y)) {
-                    match winding {
-                        Winding::Clockwise => print!(">"),
-                        Winding::CounterClockwise => print!("<"),
-                    }
-                } else {
-                    print!(".");
-                }
+                print!("{}", puzzle.fields[y][x]);
             }
         }
         println!();
     }
+
+    println!("Part 2: {}", enclosed_tiles.len());
 }
