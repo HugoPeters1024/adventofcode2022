@@ -1,6 +1,4 @@
-use std::{io::BufRead, sync::Mutex};
-
-use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator, IntoParallelIterator};
+use std::{collections::HashMap, io::BufRead, sync::Mutex};
 
 #[derive(Clone, Debug)]
 struct InputLine {
@@ -82,11 +80,10 @@ fn count_configs(input: &mut InputLine, needle: usize) -> usize {
 
 fn count_configs2(
     input: &mut InputLine,
+    cache: &mut HashMap<(usize, Vec<char>, Vec<usize>), usize>,
     needle: usize,
     streak: usize,
     streak_needle: usize,
-    minimum_tites_needed: usize,
-    maximum_configs: usize,
 ) -> usize {
     //println!("update: {}: {} {} {}", input.to_string(needle, streak_needle), needle, streak, streak_needle);
     if needle == input.map.len() {
@@ -117,38 +114,28 @@ fn count_configs2(
         }
     }
 
-    if input.map.len() - needle + streak + 1 < minimum_tites_needed {
-        //println!("too few spaces left: {}", input.to_string(needle, streak_needle));
-        return 0;
-    }
-
     if input.map[needle] == '?' {
-        input.map[needle] = '.';
-        let mut count = count_configs2(
-            input,
-            needle,
-            streak,
-            streak_needle,
-            minimum_tites_needed,
-            maximum_configs/2,
-        );
-
-        if count == maximum_configs {
-            //println!("too many configs: {}", input.to_string(needle, streak_needle));
-            input.map[needle] = '?';
-            return count;
+        let map_key = input.map.iter().cloned().skip(needle).collect();
+        let broken_key = input
+            .broken_info
+            .iter()
+            .cloned()
+            .skip(streak_needle)
+            .collect();
+        let streak_key = streak;
+        let key = (streak_key, map_key, broken_key);
+        if let Some(res) = cache.get(&key) {
+            return *res;
         }
 
         input.map[needle] = '#';
-        count += count_configs2(
-            input,
-            needle,
-            streak,
-            streak_needle,
-            minimum_tites_needed,
-            maximum_configs - count,
-        );
+        let mut count = count_configs2(input, cache, needle, streak, streak_needle);
+
+        input.map[needle] = '.';
+        count += count_configs2(input, cache, needle, streak, streak_needle);
         input.map[needle] = '?';
+
+        cache.insert(key, count);
         return count;
     }
 
@@ -166,14 +153,7 @@ fn count_configs2(
         }
 
         // Continue streak
-        return count_configs2(
-            input,
-            needle + 1,
-            streak + 1,
-            streak_needle,
-            minimum_tites_needed,
-            maximum_configs,
-        );
+        return count_configs2(input, cache, needle + 1, streak + 1, streak_needle);
     }
 
     if input.map[needle] == '.' {
@@ -185,14 +165,7 @@ fn count_configs2(
             }
             if streak == input.broken_info[streak_needle] {
                 //println!("streak accepted: {}", input.to_string(needle, streak_needle));
-                return count_configs2(
-                    input,
-                    needle + 1,
-                    0,
-                    streak_needle + 1,
-                    minimum_tites_needed - streak - 1,
-                    maximum_configs,
-                );
+                return count_configs2(input, cache, needle + 1, 0, streak_needle + 1);
             } else {
                 //println!("streak mismatch: {}", input.to_string(needle, streak_needle));
                 return 0;
@@ -200,14 +173,7 @@ fn count_configs2(
         }
 
         // No streak in progress, just continue
-        return count_configs2(
-            input,
-            needle + 1,
-            0,
-            streak_needle,
-            minimum_tites_needed,
-            maximum_configs,
-        );
+        return count_configs2(input, cache, needle + 1, 0, streak_needle);
     }
 
     panic!("Invalid input");
@@ -255,12 +221,15 @@ fn main() {
         line.broken_info = line.broken_info.repeat(5);
     }
 
+    let mut cache = HashMap::new();
+
     let total: Mutex<usize> = Mutex::new(0);
     let work_idx: Mutex<usize> = Mutex::new(0);
 
     let input = input;
 
-    (0..input.len()).into_iter().into_par_iter().for_each(|_| {
+    for line in input {
+        let mut line = line.clone();
         let idx = {
             let mut c = work_idx.lock().unwrap();
             let idx = *c;
@@ -268,24 +237,14 @@ fn main() {
             idx
         };
         println!("{}/{}", idx, input_len);
-        let mut line = input[idx].clone();
-        let maximum_configs = (2usize).pow(line.map.iter().filter(|x| **x == '?').count() as u32);
-        let minimum_tites_needed = line.broken_info.iter().sum::<usize>() + line.broken_info.len();
-        let configs = count_configs2(
-            &mut line,
-            0,
-            0,
-            0,
-            minimum_tites_needed,
-            maximum_configs,
-        );
+        let configs = count_configs2(&mut line, &mut cache, 0, 0, 0);
 
         {
             let mut t = total.lock().unwrap();
             *t += configs;
             drop(t);
         }
-    });
+    }
 
     println!("Part 2 {}", total.lock().unwrap());
 }
