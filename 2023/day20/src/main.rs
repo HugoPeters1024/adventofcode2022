@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     io::BufRead,
 };
 
@@ -79,7 +79,6 @@ fn main() {
     }
 
     let rx = register(&"rx".to_string());
-    let kz = register(&"kz".to_string());
     let button = register(&"button".to_string());
     let broadcaster = register(&"broadcaster".to_string());
     let output = register(&"output".to_string());
@@ -108,33 +107,50 @@ fn main() {
     let mut low_count = 0;
     let mut high_count = 0;
 
+    let bg = register(&"bg".to_string());
+    let ls = register(&"ls".to_string());
+    let qq = register(&"qq".to_string());
+    let sj = register(&"sj".to_string());
+
     dbg!(&max_id);
 
     let mut work: VecDeque<(usize, usize, Pulse)> = VecDeque::new();
 
-    let mut mem = 0;
+    let mut prev: HashMap<usize, usize> = HashMap::new();
+    let mut to_lcm: Vec<usize> = Vec::new();
+    let mut count = vec![0usize; max_id + 100];
 
-    for i in 0usize..100000000000 {
+    for i in 1usize..1000000 {
         if i & (1024 * 1024 - 1) == 1 {
             println!("--------- ITERATION {} ---------", i);
         }
         work.push_back((button, broadcaster, Pulse::Low));
         while let Some((origin, dst, pulse)) = work.pop_front() {
-            if dst == kz && pulse == Pulse::High {
-                let delta = i - mem;
-                mem = i;
-                println!(
-                    "delta tick {}, {} --{:?}--> {}",
-                    (delta),
-                    id_to_name.get(&origin).unwrap(),
-                    pulse,
-                    id_to_name.get(&dst).unwrap()
-                );
-                // Too low: 11678800
-                // Too high: 15705176939338545716
-                //println!("Part 2: {}", (i + 1));
-                //return;
+            if pulse == Pulse::Low {
+                if let Some(prev_tick) = prev.get(&dst) {
+                    if count[dst] == 2 && (dst == bg || dst == ls || dst == qq || dst == sj) {
+                        println!(
+                            "cycle for {} = {}",
+                            id_to_name.get(&dst).unwrap(),
+                            i - prev_tick
+                        );
+                        to_lcm.push(i - prev_tick);
+                    }
+                }
+                prev.insert(dst, i);
+                count[dst] += 1;
             }
+
+            if to_lcm.len() == 4 {
+                dbg!(&to_lcm);
+                let lcm = lcm(&to_lcm);
+                println!("Part 2: {}", lcm);
+                return;
+            }
+            // Too low: 11678800
+            // Too high: 15705176939338545716
+            //println!("Part 2: {}", (i + 1));
+            //return;
 
             //println!("{} --{:?}--> {}", id_to_name.get(&origin).unwrap(), pulse, id_to_name.get(&dst).unwrap());
 
@@ -180,4 +196,20 @@ fn main() {
 
     println!("Low: {}, High: {}", low_count, high_count);
     println!("Part 1: {}", low_count * high_count);
+}
+
+pub fn lcm(nums: &[usize]) -> usize {
+    if nums.len() == 1 {
+        return nums[0];
+    }
+    let a = nums[0];
+    let b = lcm(&nums[1..]);
+    a * b / gcd_of_two_numbers(a, b)
+}
+
+fn gcd_of_two_numbers(a: usize, b: usize) -> usize {
+    if b == 0 {
+        return a;
+    }
+    gcd_of_two_numbers(b, a % b)
 }
