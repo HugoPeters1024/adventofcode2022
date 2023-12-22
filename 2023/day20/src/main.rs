@@ -1,15 +1,14 @@
 use std::{
-    collections::{VecDeque, HashMap},
+    collections::{HashMap, VecDeque},
     io::BufRead,
 };
 
 use scanf::sscanf;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ModuleType {
-    NonEx,
     FlipFlop(Pulse),
-    Conjunction(HashMap<usize, Pulse>),
+    Conjunction(usize),
     Broadcast,
 }
 
@@ -50,20 +49,16 @@ fn main() {
         return id;
     };
 
-
-    let mut modules: Vec<ModuleType> = Vec::new();
-    for i in 0..input.len()*2 {
-        modules.insert(i, ModuleType::NonEx);
-    }
-    let mut incoming_edges: Vec<Vec<usize>> = vec![Vec::new(); input.len()*2];
-    let mut outgoing_edges: Vec<Vec<usize>> = vec![Vec::new(); input.len()*2];
+    let mut modules: Vec<ModuleType> = vec![ModuleType::Broadcast; input.len() * 2];
+    let mut incoming_edges: Vec<Vec<usize>> = vec![Vec::new(); input.len() * 2];
+    let mut outgoing_edges: Vec<Vec<usize>> = vec![Vec::new(); input.len() * 2];
 
     let mut name = String::new();
     let mut rest = String::new();
-    // First we discover all the nodes
+
     for line in &input {
         if sscanf!(&line, "&{} -> {}", name, rest).is_ok() {
-            modules[register(&name)] = ModuleType::Conjunction(HashMap::new());
+            modules[register(&name)] = ModuleType::Conjunction(0xffffffff);
         } else if sscanf!(&line, "%{} -> {}", name, rest).is_ok() {
             modules[register(&name)] = ModuleType::FlipFlop(Pulse::Low);
         } else if sscanf!(&line, "{} -> {}", name, rest).is_ok() {
@@ -84,6 +79,7 @@ fn main() {
     }
 
     let rx = register(&"rx".to_string());
+    let kz = register(&"kz".to_string());
     let button = register(&"button".to_string());
     let broadcaster = register(&"broadcaster".to_string());
     let output = register(&"output".to_string());
@@ -93,14 +89,16 @@ fn main() {
     incoming_edges[broadcaster] = vec![button];
 
     modules[output] = ModuleType::Broadcast;
-    outgoing_edges[output] = vec![rx];
+    outgoing_edges[output] = Vec::new();
+
+    modules[rx] = ModuleType::Broadcast;
 
     // Set the initial state for the conjuction modules
     for (name, module) in modules.iter_mut().enumerate() {
         match module {
             ModuleType::Conjunction(pulses) => {
                 for input in &incoming_edges[name] {
-                    pulses.insert(input.clone(), Pulse::Low);
+                    *pulses ^= 1 << *input;
                 }
             }
             _ => {}
@@ -114,19 +112,35 @@ fn main() {
 
     let mut work: VecDeque<(usize, usize, Pulse)> = VecDeque::new();
 
-    for i in 0usize..1000 {
-        if i % 100000 == 0 {
+    let mut mem = 0;
+
+    for i in 0usize..100000000000 {
+        if i & (1024 * 1024 - 1) == 1 {
             println!("--------- ITERATION {} ---------", i);
         }
-        work.clear();
         work.push_back((button, broadcaster, Pulse::Low));
         while let Some((origin, dst, pulse)) = work.pop_front() {
-            if dst == rx && pulse == Pulse::Low {
-                println!("Part 2: {}", (i+1));
-                return
+            if dst == kz && pulse == Pulse::High {
+                let delta = i - mem;
+                mem = i;
+                println!(
+                    "delta tick {}, {} --{:?}--> {}",
+                    (delta),
+                    id_to_name.get(&origin).unwrap(),
+                    pulse,
+                    id_to_name.get(&dst).unwrap()
+                );
+                // Too low: 11678800
+                // Too high: 15705176939338545716
+                //println!("Part 2: {}", (i + 1));
+                //return;
             }
 
-            //println!("{} --{:?}--> {}", origin, pulse, dst);
+            //println!("{} --{:?}--> {}", id_to_name.get(&origin).unwrap(), pulse, id_to_name.get(&dst).unwrap());
+
+            // sleep 1s
+            //std::thread::sleep(std::time::Duration::from_millis(1000));
+
             match pulse {
                 Pulse::Low => low_count += 1,
                 Pulse::High => high_count += 1,
@@ -148,14 +162,18 @@ fn main() {
                     }
                 }
                 ModuleType::Conjunction(pulses) => {
-                    *pulses.get_mut(&origin).unwrap() = pulse.clone();
-                    let all_high = pulses.values().all(|p| *p == Pulse::High);
+                    match pulse {
+                        // Set the bit to 0
+                        Pulse::Low => *pulses &= !(1 << origin),
+                        // Set the bit to 1
+                        Pulse::High => *pulses |= 1 << origin,
+                    }
+                    let all_high = *pulses == 0xffffffff;
                     let output = if all_high { Pulse::Low } else { Pulse::High };
                     for out in &outgoing_edges[dst] {
                         work.push_back((dst.clone(), out.clone(), output.clone()));
                     }
-                },
-                ModuleType::NonEx => {}
+                }
             }
         }
     }
