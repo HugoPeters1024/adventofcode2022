@@ -19,7 +19,7 @@ fn main() {
         }
     }
 
-    let MAX_STEPS: usize = 140;
+    let MAX_STEPS: usize = 65;
 
     dbg!(width, height);
     dbg!(sx, sy);

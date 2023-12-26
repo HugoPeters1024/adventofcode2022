@@ -65,6 +65,7 @@ fn find_perfect_throw(stones: &[HailStone]) -> (i64, i64, i64) {
     let ctx = Context::new(&cfg);
     let solver = Solver::new(&ctx);
 
+    // Variables for the start and velocity of the ball
     let (bx, by, bz, bvx, bvy, bvz) = (
         ast::Int::fresh_const(&ctx, "bx"),
         ast::Int::fresh_const(&ctx, "bx"),
@@ -75,6 +76,7 @@ fn find_perfect_throw(stones: &[HailStone]) -> (i64, i64, i64) {
     );
 
     for stone in stones {
+        // Find some time t where the ball intersects with the stone
         let t = ast::Int::fresh_const(&ctx, "t");
         let sx = ast::Int::from_i64(&ctx, stone.start_x);
         let sy = ast::Int::from_i64(&ctx, stone.start_y);
