@@ -43,18 +43,11 @@ fn main() {
 
     let mut sx = 0;
     let mut sy = 0;
-    let mut ex = 0;
-    let mut ey = 0;
     for (y, line) in maze.iter().enumerate() {
         for (x, c) in line.iter().enumerate() {
             if *c == 'S' {
                 sx = x;
                 sy = y;
-            }
-
-            if *c == 'E' {
-                ex = x;
-                ey = y;
             }
         }
     }
@@ -69,6 +62,10 @@ fn main() {
     let mut best_score = usize::MAX;
 
     while let Some(((x, y, dir, path), Reverse(score))) = work.pop() {
+        if score > best_score {
+            continue;
+        }
+
         let mut path = path.clone();
         path.push((x, y));
         let path = path;
