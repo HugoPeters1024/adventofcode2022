@@ -1,0 +1,4 @@
+inp w
+add z w
+add z -6
+mod z 2
