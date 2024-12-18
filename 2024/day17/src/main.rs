@@ -1,7 +1,6 @@
-use std::io::BufRead;
+use std::{collections::VecDeque, io::BufRead};
 
 use scanf::sscanf;
-use z3::{Config, Context, Solver};
 
 fn run_program(mut a: usize, mut b: usize, mut c: usize, program: &Vec<usize>) -> Vec<usize> {
     let mut ip = 0;
@@ -26,7 +25,7 @@ fn run_program(mut a: usize, mut b: usize, mut c: usize, program: &Vec<usize>) -
 
         match op {
             // adv
-            0 => a = a / (2usize.pow(combo as u32)),
+            0 => a = a >> combo,
             // bxl
             1 => b = b ^ literal,
             // bst
@@ -44,73 +43,14 @@ fn run_program(mut a: usize, mut b: usize, mut c: usize, program: &Vec<usize>) -
                 output.push(combo % 8);
             }
             // bdv
-            6 => b = a / (2usize.pow(combo as u32)),
+            6 => b = a >> combo,
             // cdv
-            7 => c = a / (2usize.pow(combo as u32)),
+            7 => c = a >> combo,
             _ => panic!(),
         }
     }
 
     output
-}
-
-fn run_program2(mut a: usize, mut b: usize, mut c: usize, program: &Vec<usize>) -> bool {
-    let mut ip = 0;
-    let mut output_len = 0;
-
-    loop {
-        if ip >= program.len() - 1 {
-            break;
-        }
-
-        if output_len > program.len() {
-            return false;
-        }
-
-        let op = program[ip];
-        let literal = program[ip + 1];
-        ip += 2;
-        let combo = match literal {
-            0 | 1 | 2 | 3 => literal,
-            4 => a,
-            5 => b,
-            6 => c,
-            7 => 0,
-            _ => panic!(),
-        };
-
-        match op {
-            // adv
-            0 => a = a / (2usize.pow(combo as u32)),
-            // bxl
-            1 => b = b ^ literal,
-            // bst
-            2 => b = combo % 8,
-            // jnz
-            3 => {
-                if a != 0 {
-                    ip = literal;
-                }
-            }
-            // bxc
-            4 => b = b ^ c,
-            // out
-            5 => {
-                let output = combo % 8;
-                if output_len >= program.len() || program[output_len] != output {
-                    return false;
-                }
-                output_len += 1;
-            }
-            // bdv
-            6 => b = a / (2usize.pow(combo as u32)),
-            // cdv
-            7 => c = a / (2usize.pow(combo as u32)),
-            _ => panic!(),
-        }
-    }
-
-    output_len == program.len()
 }
 
 fn main() {
@@ -137,15 +77,26 @@ fn main() {
     }
     println!();
 
-    let mut a = 0;
-    loop {
-        if run_program2(a, b, c, &program) {
-            println!("Part 2: {}", a);
-            break;
-        }
-        a += 1;
-        if a % 10000000 == 0 {
-            println!("{}", a);
+    let mut work = VecDeque::new();
+    work.push_front(0);
+
+    'outer: while let Some(base) = work.pop_back() {
+        for i in 0..8 {
+            let output = run_program(base + i, b, c, &program);
+            let suffix = &program[program.len() - output.len()..];
+
+            if output == program {
+                println!("Part 2: {}", base + i);
+                break 'outer;
+            }
+
+            if output == suffix {
+                work.push_front((base + i) * 8);
+                for d in output {
+                    print!("{},", d);
+                }
+                println!();
+            };
         }
     }
 }
