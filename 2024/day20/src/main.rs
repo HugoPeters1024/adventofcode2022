@@ -43,8 +43,8 @@ fn main() {
         work.push_back((x, y - 1, dist + 1));
     }
 
-    let cheat_threshold = 20;
-    let max_cheat_length = 2;
+    let cheat_threshold = 100;
+    let max_cheat_length = 20isize;
 
     let mut cheats_found = 0;
     let mut work: VecDeque<(isize, isize, isize)> = VecDeque::new();
@@ -60,21 +60,18 @@ fn main() {
         }
         visisted.insert((x, y));
 
-        //for dy in -max_cheat_length..=max_cheat_length {
-        //    dbg!(dy);
-        //}
+        for dy in -max_cheat_length..=max_cheat_length {
+            for dx in -max_cheat_length..=max_cheat_length {
+                let distance_travelled = dx.abs() + dy.abs();
+                // crude filter
+                if distance_travelled > max_cheat_length {
+                    continue;
+                }
 
-        for dir in 0..4 {
-            let (nx,ny) = match dir {
-                0 => (x+2,y),
-                1 => (x-2,y),
-                2 => (x,y+2),
-                3 => (x,y-2),
-                _ => panic!(),
-            };
-            if let Some(potential_further) = dist_from_start.get(&(nx, ny)) {
-                if *potential_further > dist + 2 {
-                    let gain = potential_further - dist - 2;
+                let nx = x + dx;
+                let ny = y + dy;
+                if let Some(potential_further) = dist_from_start.get(&(nx, ny)) {
+                    let gain = potential_further - dist - distance_travelled;
                     if gain >= cheat_threshold {
                         cheats_found += 1
                     }
@@ -90,5 +87,8 @@ fn main() {
         work.push_back((x, y - 1, dist + 1));
     }
 
-    println!("cheats found with threshold {}: {}", cheat_threshold, cheats_found);
+    println!(
+        "cheats found with threshold {}: {}",
+        cheat_threshold, cheats_found
+    );
 }
