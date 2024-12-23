@@ -1,12 +1,16 @@
-use std::{collections::{HashSet, VecDeque}, io::BufRead};
+use std::{
+    collections::{HashSet, VecDeque},
+    io::BufRead,
+};
+
+const NUM_ROBOTS: usize = 4;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 struct SearchState {
     output: Vec<char>,
-    buttons_pressed: usize,
     // (player ->) d1 -> d2 (--> numeric)
-    dir_positions: [isize; 2],
-    numeric_position: isize,
+    dir_positions: [i8; NUM_ROBOTS],
+    numeric_position: i8,
 }
 
 impl SearchState {
@@ -42,7 +46,12 @@ impl SearchState {
         }
     }
 
-    fn _press_direction_button(&mut self, idx: usize, button: char) -> bool {
+    fn _press_direction_button(
+        &mut self,
+        idx: usize,
+        button: char,
+        ticks_since_A: &mut [u8; NUM_ROBOTS],
+    ) -> bool {
         if idx == self.dir_positions.len() {
             match button {
                 '^' => {
@@ -71,40 +80,50 @@ impl SearchState {
             match button {
                 '^' => {
                     self.dir_positions[idx] -= 3;
+                    ticks_since_A[idx] += 1;
                     true
                 }
                 'v' => {
                     self.dir_positions[idx] += 3;
+                    ticks_since_A[idx] += 1;
                     true
                 }
                 '>' => {
                     self.dir_positions[idx] += 1;
+                    ticks_since_A[idx] += 1;
                     (self.dir_positions[idx] - 1) % 3 != 2
                 }
                 '<' => {
                     self.dir_positions[idx] -= 1;
+                    ticks_since_A[idx] += 1;
                     (self.dir_positions[idx] + 1) % 3 != 0
                 }
-                'A' => match self.dir_positions[idx] {
-                    0 => panic!(),
-                    1 => self._press_direction_button(idx + 1, '^'),
-                    2 => self._press_direction_button(idx + 1, 'A'),
-                    3 => self._press_direction_button(idx + 1, '<'),
-                    4 => self._press_direction_button(idx + 1, 'v'),
-                    5 => self._press_direction_button(idx + 1, '>'),
-                    _ => panic!(),
-                },
+                'A' => {
+                    ticks_since_A[idx] = 0;
+                    match self.dir_positions[idx] {
+                        0 => panic!(),
+                        1 => self._press_direction_button(idx + 1, '^', ticks_since_A),
+                        2 => self._press_direction_button(idx + 1, 'A', ticks_since_A),
+                        3 => self._press_direction_button(idx + 1, '<', ticks_since_A),
+                        4 => self._press_direction_button(idx + 1, 'v', ticks_since_A),
+                        5 => self._press_direction_button(idx + 1, '>', ticks_since_A),
+                        _ => panic!(),
+                    }
+                }
                 _ => panic!(),
             }
         }
     }
 
-    fn player_press_button(&self, button: char) -> Option<Self> {
+    fn player_press_button(
+        &self,
+        button: char,
+        ticks_since_A: &mut [u8; NUM_ROBOTS],
+    ) -> Option<Self> {
         let mut ret = self.clone();
-        if !ret._press_direction_button(0, button) {
+        if !ret._press_direction_button(0, button, ticks_since_A) {
             return None;
         }
-        ret.buttons_pressed += 1;
         if ret.valid() {
             Some(ret)
         } else {
@@ -116,43 +135,81 @@ impl SearchState {
 fn main() {
     let initial_state = SearchState {
         output: Vec::new(),
-        buttons_pressed: 0,
-        dir_positions: [2; 2],
+        dir_positions: [2; NUM_ROBOTS],
         numeric_position: 11,
     };
 
     let mut score = 0;
 
-    for line in std::io::stdin().lock().lines() {
-        let target: Vec<char> = line.unwrap().chars().collect();
+    for line in std::io::stdin().lock().lines().take(1) {
+        let target: Vec<char> = line.unwrap().chars().take(1).collect();
         let mut visited: HashSet<SearchState> = HashSet::new();
-        let mut work: VecDeque<(SearchState, usize)> = VecDeque::new();
-        work.push_front((initial_state.clone(), 0));
+        let mut work: VecDeque<(SearchState, usize, [u8; NUM_ROBOTS], char, Vec<char>)> = VecDeque::new();
+        work.push_front((initial_state.clone(), 0, [0; NUM_ROBOTS], ' ', Vec::new()));
 
-        'outer: while let Some((state, ticks_since_A)) = work.pop_front() {
+        'outer: while let Some((state, buttons_pressed, ticks_since_A, prev_button, path)) =
+            work.pop_front()
+        {
             if visited.contains(&state) {
                 continue;
             }
             visited.insert(state.clone());
 
+            let output_len_before = state.output.len();
+
             for button in ['^', 'v', '<', '>', 'A'] {
-                if let Some(state) = state.player_press_button(button) {
+                if button == '<' && prev_button == '>' {
+                    continue;
+                }
+                if button == '>' && prev_button == '<' {
+                    continue;
+                }
+                if button == '^' && prev_button == 'v' {
+                    continue;
+                }
+                if button == 'v' && prev_button == '^' {
+                    continue;
+                }
+
+                let mut ticks_since_A = ticks_since_A.clone();
+                let mut path = path.clone();
+                path.push(button);
+
+                if let Some(state) = state.player_press_button(button, &mut ticks_since_A) {
+                    let buttons_pressed = buttons_pressed + 1;
                     if button == 'A' {
-                        let interested = &target[..state.output.len()];
-                        if state.output != interested {
-                            continue;
+                        if state.output.len() > output_len_before {
+                            let interested = &target[..state.output.len()];
+                            if state.output != interested {
+                                continue;
+                            }
+                            work.clear();
+                            visited.clear();
+
+                            if state.output.len() == target.len() {
+                                score += buttons_pressed
+                                    * target
+                                        .iter()
+                                        .take(3)
+                                        .collect::<String>()
+                                        .parse::<usize>()
+                                        .unwrap();
+                                dbg!(buttons_pressed);
+                                for p in &path {
+                                    print!("{}", p);
+                                }
+                                println!();
+                                println!("#A: {}", path.iter().filter(|x| **x == 'A').count());
+                                break 'outer;
+                            }
                         }
-                        if state.output.len() == target.len() {
-                            score += state.buttons_pressed * (target.iter().take(3).collect::<String>()).parse::<usize>().unwrap();
-                            dbg!(state.buttons_pressed);
-                            break 'outer;
-                        }
-                        work.push_back((state, 0));
+                        work.push_back((state, buttons_pressed, ticks_since_A, button, path));
                     } else {
                         // not pressing A more than 3 times makes no sense
-                        if ticks_since_A < 3 {
-                            work.push_back((state, ticks_since_A + 1));
+                        if ticks_since_A.iter().any(|x| *x > 3) {
+                            continue;
                         }
+                        work.push_back((state, buttons_pressed, ticks_since_A, button, path));
                     }
                 }
             }
@@ -160,4 +217,5 @@ fn main() {
     }
 
     println!("Part 1: {score}");
+
 }
