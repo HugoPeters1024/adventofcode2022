@@ -1,9 +1,12 @@
 use bitvec::{access::BitSafe, prelude::*};
 use itertools::Itertools;
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use std::{
     io::BufRead,
-    sync::atomic::{AtomicIsize, AtomicUsize, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicIsize, AtomicUsize, Ordering},
+    },
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -22,10 +25,7 @@ fn main() {
                 .split(",")
                 .map(|el| el.parse::<isize>().unwrap())
                 .collect::<Vec<_>>();
-            Vec2 {
-                x: v[0],
-                y: v[1],
-            }
+            Vec2 { x: v[0], y: v[1] }
         })
         .collect();
 
@@ -52,7 +52,6 @@ fn main() {
     let width = 1 + markers.iter().map(|v| v.x).max().unwrap() as usize;
     let height = 1 + markers.iter().map(|v| v.y).max().unwrap() as usize;
 
-    dbg!((min_x, min_y, width, height));
     let mut grid = bitvec![0b0; width*height];
     for (i, lhs) in markers.iter().enumerate() {
         let rhs = &markers[(i + 1) % markers.len()];
@@ -75,44 +74,62 @@ fn main() {
 
     print_grid(&grid, width, height, 200, 40);
 
-    for (i, lhs) in markers.iter().enumerate() {
-        let rhs = &markers[(i + 1) % markers.len()];
+    let grid = Mutex::new(grid);
+    let y_filled = AtomicUsize::new(0);
+    (0..height).into_par_iter().for_each(|y| {
+        let mut bitline = bitvec![0b0; width];
+        let progress = y_filled.fetch_add(1, Ordering::Relaxed);
+        if progress % 1000 == 0 {
+            println!("filling {}%", progress as f32 / height as f32 * 100.0);
+        }
+        for x in 0..width {
+            let mut crossings = 0;
+            let px = x as isize;
+            let py = y as isize;
 
-        let dx = (rhs.x - lhs.x).signum();
-        let dy = (rhs.y - lhs.y).signum();
+            for (i, lhs) in markers.iter().enumerate() {
+                let rhs = &markers[(i + 1) % markers.len()];
 
-        let mut x = lhs.x;
-        let mut y = lhs.y;
+                let x1 = lhs.x;
+                let y1 = lhs.y;
+                let x2 = rhs.x;
+                let y2 = rhs.y;
 
-        while !(x == rhs.x && y == rhs.y) {
-            let mut fx = x;
-            let mut fy = y;
+                let y_min = y1.min(y2);
+                let y_max = y1.max(y2);
 
-            let (fdx, fdy) = if dx != 0 { (0, dx) } else { (-dy, 0) };
+                if y1 == y2 {
+                    continue;
+                }
 
-            fx += fdx;
-            fy += fdy;
+                if py >= y_min && py < y_max {
+                    let x_intersect = if y2 != y1 {
+                        x1 + ((py - y1) * (x2 - x1)) / (y2 - y1)
+                    } else {
+                        continue;
+                    };
 
-            if fx < 0 || fx >= width as isize || fy < 0 || fy >= height as isize {
-                break;
-            }
-
-            while !grid.get(fy as usize * width + fx as usize).unwrap() {
-                grid.set(fy as usize * width + fx as usize, true);
-                fx += fdx;
-                fy += fdy;
-                if fx < 0 || fx >= width as isize || fy < 0 || fy >= height as isize {
-                    break;
+                    if x_intersect >= px {
+                        crossings += 1;
+                    }
                 }
             }
 
-            x += dx;
-            y += dy;
+            // Point is inside if odd number of crossings
+            if crossings % 2 == 1 {
+                bitline.set(x, true);
+            }
         }
 
-        grid.set(y as usize * width + x as usize, true);
-    }
+        let mut grid = grid.lock().unwrap();
+        for x in 0..width {
+            if bitline.get(x).unwrap() == true {
+                grid.set(y * width + x, true);
+            }
+        }
+    });
 
+    let grid = grid.lock().unwrap();
     println!("done filling, filled {}", grid.count_ones());
     print_grid(&grid, width, height, 200, 40);
 
@@ -122,8 +139,6 @@ fn main() {
     } else {
         println!("no doubt");
     }
-
-    return;
 
     let max = AtomicIsize::new(0);
     let count = AtomicUsize::new(0);
@@ -155,11 +170,8 @@ fn main() {
             let sy = pair[0].y.min(pair[1].y);
             let my = pair[0].y.max(pair[1].y);
 
-            for y in sy+1..my {
-                if surface < max.load(Ordering::Relaxed) {
-                    return;
-                }
-                for x in sx+1..mx {
+            for y in sy..=my {
+                for x in sx..=mx {
                     if !grid.get(y as usize * width + x as usize).unwrap() {
                         return;
                     }
