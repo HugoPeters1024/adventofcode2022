@@ -1,0 +1,10 @@
+[package]
+name = "day10"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitvec = "1.0.1"
+nom = "8.0.0"
+z3 = "0.19.5"
+z3-sys = "0.10.3"
