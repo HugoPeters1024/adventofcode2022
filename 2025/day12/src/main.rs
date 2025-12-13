@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    io::BufRead,
-    sync::atomic::AtomicUsize,
-};
+use std::{collections::HashSet, io::BufRead, sync::atomic::AtomicUsize};
 
 use bitvec::prelude::*;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -48,11 +44,26 @@ fn main() {
     }
 
     let sum = AtomicUsize::new(0);
+
+    targets = targets
+        .into_iter()
+        .filter(|((width, height), amounts)| {
+            let mut sum = 0;
+            for (i, a) in amounts.iter().enumerate() {
+                sum += presents[i].count_ones() * a;
+            }
+            sum <= width * height
+        })
+        .collect();
+
+    dbg!(targets.len());
+
     targets.par_iter().for_each(|((width, height), amounts)| {
         let mut presents = presents.clone();
         let mut to_go = amounts.clone();
         let mut state = bitvec![0b0; width * height];
         let mut cache = HashSet::new();
+        let mut limits = vec![0; to_go.len()];
 
         if feasible(
             &mut presents,
@@ -60,25 +71,26 @@ fn main() {
             *width,
             *height,
             &mut to_go,
+            &mut limits,
             &mut cache,
         ) {
             let total = sum.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
             println!();
-            println!("yes (total now {})", total + 1);
-            for y in 0..*height {
-                for x in 0..*width {
-                    print!(
-                        "{}",
-                        if state.get(y * width + x).unwrap() == true {
-                            'X'
-                        } else {
-                            '.'
-                        }
-                    );
-                }
-                println!();
-            }
+            println!("yes (total now {}/{})", total + 1, targets.len());
+            //for y in 0..*height {
+            //    for x in 0..*width {
+            //        print!(
+            //            "{}",
+            //            if state.get(y * width + x).unwrap() == true {
+            //                'X'
+            //            } else {
+            //                '.'
+            //            }
+            //        );
+            //    }
+            //    println!();
+            //}
         } else {
             println!();
             println!("no");
@@ -108,6 +120,7 @@ fn feasible(
     width: usize,
     height: usize,
     to_go: &mut Vec<usize>,
+    limits: &mut Vec<usize>,
     cache: &mut HashSet<(BitVec, Vec<usize>)>,
 ) -> bool {
     if cache.contains(&(state.clone(), to_go.clone())) {
@@ -126,27 +139,32 @@ fn feasible(
 
         for _ in 0..4 {
             rotate_clockwise_90deg(&mut presents[present_choice]);
-            for y in 0..height - 2 {
-                'next_try: for x in 0..width - 2 {
-                    let old_state = state.clone();
-                    for dy in 0..3 {
-                        for dx in 0..3 {
-                            if presents[present_choice].get(dy * 3 + dx).unwrap() == true {
-                                if state.get((y + dy) * width + x + dx).unwrap() == true {
-                                    *state = old_state;
-                                    continue 'next_try;
-                                }
-                                state.set((y + dy) * width + x + dx, true);
+
+            'next_try: for idx in limits[present_choice]..((width - 2) * (height - 2)) {
+                let x = idx % width;
+                let y = idx / width;
+
+                let old_state = state.clone();
+                for dy in 0..3 {
+                    for dx in 0..3 {
+                        if presents[present_choice].get(dy * 3 + dx).unwrap() == true {
+                            if state.get((y + dy) * width + x + dx).unwrap() == true {
+                                *state = old_state;
+                                continue 'next_try;
                             }
+                            state.set((y + dy) * width + x + dx, true);
                         }
                     }
-
-                    if feasible(presents, state, width, height, to_go, cache) {
-                        return true;
-                    }
-
-                    *state = old_state;
                 }
+
+                let old_limit = limits[present_choice];
+                limits[present_choice] = y * width + x;
+                if feasible(presents, state, width, height, to_go, limits, cache) {
+                    return true;
+                }
+                limits[present_choice] = old_limit;
+
+                *state = old_state;
             }
         }
         to_go[present_choice] += 1;
